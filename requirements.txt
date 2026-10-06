@@ -1,0 +1,26 @@
+# 发票/小票手写手机号识别 — 依赖
+# 安装:  pip install -r requirements.txt
+#
+# Python 建议 >= 3.10 (下列依赖的最新版普遍要求 3.10+;
+# 在更旧的 Python 上 pip 可能只能解析到较旧版本)
+
+# ---- OCR ----
+# paddlepaddle 钉死 3.3.1: 这是我们验证过的版本, 也是 PyPI 当前的 latest。
+# 已知该版本的 oneDNN 路径在 PP-OCRv6 模型上有
+# ConvertPirAttribute2RuntimeAttribute 报错, 代码里已用 enable_mkldnn=False 绕开
+# (见 recognize_phone.py:make_ocr)。换版本前请先跑一遍 make_ocr() 确认。
+paddlepaddle==3.3.1
+paddleocr>=3.7.0
+
+# ---- 图像 ----
+opencv-python>=4.10
+numpy>=1.26,<3
+
+# ---- LLM 客户端 (任何 OpenAI 兼容协议的服务共用这一个 SDK) ----
+openai>=1.0
+
+# ---- Web ----
+flask>=3.0
+
+# ---- 配置 ----
+python-dotenv>=1.0

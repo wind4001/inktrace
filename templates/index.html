@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>发票手写手机号识别</title>
+<style>
+:root {
+  --bg: #f4f6fa; --card: #fff; --border: #e3e6ee;
+  --text: #1f2430; --muted: #6b7280;
+  --green: #16a34a; --amber: #d97706; --red: #dc2626; --blue: #2563eb;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Microsoft YaHei", system-ui, sans-serif; background: var(--bg); color: var(--text); }
+.container { max-width: 880px; margin: 0 auto; padding: 32px 20px 80px; }
+h1 { font-size: 24px; margin-bottom: 4px; }
+.sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+
+#dropzone {
+  border: 2px dashed #c3c9d8; border-radius: 14px; background: var(--card);
+  padding: 44px 20px; text-align: center; color: var(--muted);
+  cursor: pointer; transition: border-color .2s, background .2s;
+  user-select: none;
+}
+#dropzone.drag { border-color: var(--blue); background: #eef4ff; }
+#dropzone .big { font-size: 34px; display: block; margin-bottom: 10px; }
+#dropzone b { color: var(--blue); }
+
+.job {
+  background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  padding: 18px 22px; margin-top: 16px;
+}
+.job .name { font-weight: 600; font-size: 15px; word-break: break-all; }
+.job .status { color: var(--muted); font-size: 13px; margin-top: 8px; }
+.spinner {
+  display: inline-block; width: 16px; height: 16px; border: 3px solid var(--border);
+  border-top-color: var(--blue); border-radius: 50%;
+  animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 8px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.phone { font-size: 34px; font-weight: 700; letter-spacing: 2px; margin: 10px 0 4px; }
+.date { font-size: 18px; font-weight: 600; color: var(--text); margin: 8px 0 2px; }
+.date small { font-size: 12px; font-weight: 400; color: var(--muted); }
+.amount { font-size: 26px; font-weight: 700; color: var(--blue); margin: 4px 0 4px; }
+.amount small { font-size: 13px; font-weight: 400; color: var(--muted); }
+.badge { display: inline-block; padding: 3px 12px; border-radius: 999px; font-size: 12px; color: #fff; margin-top: 6px; }
+.badge.ok { background: var(--green); }
+.badge.warn { background: var(--amber); }
+.badge.err { background: var(--red); }
+.meta { color: var(--muted); font-size: 13px; margin-top: 6px; line-height: 1.7; }
+img.result { width: 100%; border-radius: 10px; border: 1px solid var(--border); margin-top: 14px; }
+details { margin-top: 12px; }
+summary { color: var(--blue); cursor: pointer; font-size: 13px; }
+pre { background: #f8f9fc; border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 12px; overflow: auto; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>发票识别 · 手写手机号 + 实付金额</h1>
+  <div class="sub">上传发票 / 小票图片，自动识别手写手机号和实付金额（PaddleOCR + 大语言模型）。每张约需 2-4 分钟。</div>
+
+  <div id="dropzone">
+    <span class="big">📄</span>
+    点击选择图片，或把图片拖拽到此处<br>
+    <b>支持批量上传</b>
+  </div>
+  <input type="file" id="fileInput" accept="image/*" multiple hidden>
+
+  <div id="jobs"></div>
+</div>
+
+<script>
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const jobsEl = document.getElementById('jobs');
+
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+dropzone.addEventListener('drop', e => { e.preventDefault(); dropzone.classList.remove('drag'); uploadFiles(e.dataTransfer.files); });
+dropzone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => { uploadFiles(fileInput.files); fileInput.value = ''; });
+
+function uploadFiles(files) {
+  for (const file of files) {
+    if (!file.type.startsWith('image/')) continue;
+    const fd = new FormData();
+    fd.append('file', file);
+    fetch('/api/upload', { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(data => { if (data.job_id) { addJobCard(data.job_id, file.name); poll(data.job_id); } })
+      .catch(err => alert('上传失败: ' + err));
+  }
+}
+
+function addJobCard(jobId, name) {
+  const div = document.createElement('div');
+  div.className = 'job'; div.id = 'job-' + jobId; div.dataset.name = name;
+  div.innerHTML = `<div class="name">${escapeHtml(name)}</div><div class="status"><span class="spinner"></span>识别中…（约2-4分钟）</div>`;
+  jobsEl.prepend(div);
+}
+
+function poll(jobId) {
+  fetch('/api/status/' + jobId)
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'processing') { setTimeout(() => poll(jobId), 3000); return; }
+      const el = document.getElementById('job-' + jobId);
+      if (!el) return;
+      if (data.status === 'error') {
+        el.querySelector('.status').innerHTML = `<span class="badge err">识别失败</span><div class="meta">${escapeHtml(data.error || '')}</div>`;
+        return;
+      }
+      renderResult(el, data.result);
+    })
+    .catch(() => setTimeout(() => poll(jobId), 3000));
+}
+
+function renderResult(el, r) {
+  const ok = r.matches_regex && !r.needs_review;
+  let badge, tip;
+  if (r.matches_regex && !r.needs_review) { badge = '<span class="badge ok">识别成功</span>'; tip = ''; }
+  else if (r.matches_regex && r.needs_review) { badge = '<span class="badge warn">格式合法 · 建议人工复核</span>'; tip = '手机号格式符合，但结果经过推断，请核对。'; }
+  else if (r.phone) { badge = '<span class="badge warn">部分识别 · 需人工复核</span>'; tip = '只识别出部分数字，缺失部分请查看标注图人工补全。'; }
+  else { badge = '<span class="badge err">未识别出</span>'; tip = '未找到手写手机号，请检查图片质量。'; }
+  const imgHtml = r.result_image
+    ? `<img class="result" src="/output/${encodeURIComponent(r.result_image)}" alt="标注图" title="标注图：绿框=印刷，橙框=手写候选，红框=判定结果">`
+    : '';
+  const jsonHtml = `<details><summary>查看详细 JSON</summary><pre>${escapeHtml(JSON.stringify(r, null, 2))}</pre></details>`;
+  const amountHtml = r.amount
+    ? `<div class="amount">实付金额 ¥${escapeHtml(r.amount)}${r.amount_needs_review ? ' <small>(需复核)</small>' : ''}</div>`
+    : '<div class="amount">实付金额 <small>未识别出</small></div>';
+  const dateHtml = r.date
+    ? `<div class="date">开票日期 ${escapeHtml(r.date)}${r.date_needs_review ? ' <small>(需复核)</small>' : ''}</div>`
+    : '';
+  el.innerHTML = `
+    <div class="name">${escapeHtml(el.dataset.name)}</div>
+    ${dateHtml}
+    ${amountHtml}
+    ${r.phone ? `<div class="phone">${escapeHtml(r.phone)}</div>` : ''}
+    <div>${badge}</div>
+    ${tip ? `<div class="meta">${escapeHtml(tip)}</div>` : ''}
+    ${r.reason ? `<div class="meta">识别理由：${escapeHtml(r.reason)}</div>` : ''}
+    ${r.amount_reason ? `<div class="meta">金额理由：${escapeHtml(r.amount_reason)}</div>` : ''}
+    ${r.date_reason ? `<div class="meta">日期理由：${escapeHtml(r.date_reason)}</div>` : ''}
+    <div class="meta">手机号格式合法：${r.matches_regex ? '是' : '否'}　·　需要复核：${r.needs_review ? '是' : '否'}</div>
+    ${imgHtml}
+    ${jsonHtml}
+  `;
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+</script>
+</body>
+</html>

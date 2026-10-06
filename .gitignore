@@ -1,0 +1,35 @@
+# ---- Python ----
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# ---- 敏感信息(绝不提交) ----
+.env
+.env.local
+
+# ---- 运行时生成 ----
+uploads/
+output/
+output_*/
+ocr_cache/
+
+# ---- 业务数据(含个人信息, 不公开上传) ----
+*.xlsx
+*.xls
+*.csv
+
+# ---- 测试数据/调试 ----
+test/
+debug_*
+
+# ---- 模型/缓存 ----
+.paddle/
+.paddlex/
+*.log
+
+# ---- 代码索引(本地工具生成, 非源码) ----
+.codegraph/
+.code-review-graph/
